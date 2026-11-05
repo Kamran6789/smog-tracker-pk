@@ -61,6 +61,23 @@ def load() -> pd.DataFrame:
 def load_stations() -> pd.DataFrame:
     return load_station_readings(config.STATIONS_LATEST_FILE)
 
+def refresh_all() -> str:
+    """Fetch model data for all cities + measured station data (if an OpenAQ key is set)."""
+    rows = AirQualityClient().fetch_cities(list(config.CITIES.values()), past_days=3)
+    save_readings(rows, config.DATA_FILE)
+    msg = f"{len(rows)} model readings"
+    try:
+        oaq = OpenAQClient()
+        readings = oaq.latest_readings(oaq.list_pm25_stations())
+        save_station_readings(readings, config.STATIONS_LATEST_FILE, config.STATIONS_HISTORY_FILE)
+        msg += f" + {len(readings)} live station readings"
+    except OpenAQError as exc:
+        msg += f" (stations skipped: {exc})"
+    load.clear()
+    load_stations.clear()
+    return msg
+
+
 
 def card(label: str, value: str, sub: str = "", colour: str = "#e6e6e6", pill: str = "") -> str:
     pill_html = (f'<div class="pill" style="background:{colour}">{pill}</div>' if pill else "")
@@ -73,22 +90,15 @@ def card(label: str, value: str, sub: str = "", colour: str = "#e6e6e6", pill: s
 with st.sidebar:
     st.markdown("### 🌫️ Smog Tracker PK")
     if st.button("🔄 Refresh live data", width="stretch"):
-        with st.spinner("Fetching air quality for all cities…"):
-            rows = AirQualityClient().fetch_cities(list(config.CITIES.values()), past_days=3)
-            save_readings(rows, config.DATA_FILE)
-        try:
-            with st.spinner("Fetching real readings from ground stations (OpenAQ)…"):
-                oaq = OpenAQClient()
-                readings = oaq.latest_readings(oaq.list_pm25_stations())
-                save_station_readings(readings, config.STATIONS_LATEST_FILE,
-                                      config.STATIONS_HISTORY_FILE)
-            st.success(f"Updated model data + {len(readings)} live station readings")
-        except OpenAQError as exc:
-            st.warning(f"Model data updated. Measured stations skipped: {exc}")
-        load.clear()
-        load_stations.clear()
+        with st.spinner("Fetching model data and live station readings…"):
+            st.success("Updated: " + refresh_all())
 
 df = load()
+if df.empty:
+    # First visit on a fresh server (e.g. Streamlit Cloud after a restart): fetch automatically.
+    with st.spinner("Loading live air-quality data for Pakistan… (first load takes ~1 minute)"):
+        refresh_all()
+    df = load()
 if df.empty:
     st.markdown('<div class="hero"><h1>🌫️ Smog Tracker PK</h1>'
                 '<p>No data yet. Click <b>Refresh live data</b> in the sidebar, '
