@@ -24,7 +24,8 @@ CITY_RADIUS_KM = 35         # a station counts towards a city if it is this clos
 REQUEST_DELAY_SECONDS = 1.2  # free tier allows ~60 requests/minute
 MAX_STATIONS_PER_CITY = 3   # keeps total requests low (rate limits)
 TIME_BUDGET_SECONDS = 90    # never let station fetching block the app for longer than this
-MAX_RATE_LIMIT_WAIT = 60
+MAX_RATE_LIMIT_WAIT = 15   # seconds; give up quickly instead of blocking the page
+OPENAQ_RETRIES = 2
 
 
 class OpenAQError(Exception):
@@ -80,7 +81,7 @@ class OpenAQClient:
         self.session.headers.update({"X-API-Key": self.api_key, "User-Agent": config.USER_AGENT})
 
     def _get(self, path: str, params: dict | None = None) -> dict:
-        for attempt in range(1, config.MAX_RETRIES + 1):
+        for attempt in range(1, OPENAQ_RETRIES + 1):
             try:
                 r = self.session.get(f"{BASE_URL}{path}", params=params,
                                      timeout=config.REQUEST_TIMEOUT_SECONDS)
@@ -98,7 +99,7 @@ class OpenAQClient:
             except (requests.RequestException, ValueError) as exc:
                 log.warning("OpenAQ attempt %d failed: %s", attempt, exc)
                 time.sleep(2 ** attempt)
-        raise OpenAQError(f"OpenAQ request failed after {config.MAX_RETRIES} attempts: {path}")
+        raise OpenAQError(f"OpenAQ request failed after {OPENAQ_RETRIES} attempts: {path}")
 
     def list_pm25_stations(self) -> list[dict]:
         """Fresh PM2.5 stations near the tracked cities (at most a few per city)."""
