@@ -19,6 +19,14 @@ from smog_tracker.storage import (load_readings, load_station_readings, save_rea
 
 st.set_page_config(page_title="Smog Tracker PK", page_icon="🌫️", layout="wide")
 
+try:  # phones get a wider map view, shorter charts and no chart toolbars
+    IS_MOBILE = "mobi" in st.context.headers.get("User-Agent", "").lower()
+except Exception:
+    IS_MOBILE = False
+MAP_ZOOM = 3.7 if IS_MOBILE else 4.3
+MAP_HEIGHT = 420 if IS_MOBILE else 520
+CHART_CONFIG = {"displayModeBar": False}
+
 # ---------- styling ----------
 st.markdown("""
 <style>
@@ -39,15 +47,31 @@ st.markdown("""
 .hero, .card, .advice {animation: fadeUp 0.7s ease both;}
 .card {transition: transform 0.25s ease, box-shadow 0.25s ease;}
 .card:hover {transform: translateY(-4px); box-shadow: 0 10px 30px rgba(247,37,133,0.15);}
-div[data-testid="column"]:nth-child(2) .card {animation-delay: 0.1s;}
-div[data-testid="column"]:nth-child(3) .card {animation-delay: 0.2s;}
-div[data-testid="column"]:nth-child(4) .card {animation-delay: 0.3s;}
 @keyframes fadeUp {from {opacity: 0; transform: translateY(14px);} to {opacity: 1; transform: none;}}
 .live-dot {display:inline-block; width:10px; height:10px; border-radius:50%; background:#f72585;
            margin-right:8px; animation: pulse 1.6s infinite;}
 @keyframes pulse {0% {box-shadow: 0 0 0 0 rgba(247,37,133,0.7);} 70% {box-shadow: 0 0 0 12px rgba(247,37,133,0);}
                   100% {box-shadow: 0 0 0 0 rgba(247,37,133,0);}}
 .footer {color: #6b7286; font-size: 0.8rem; margin-top: 28px; text-align: center;}
+.kpis {display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;}
+.kpis .card:nth-child(2) {animation-delay: 0.1s;}
+.kpis .card:nth-child(3) {animation-delay: 0.2s;}
+.kpis .card:nth-child(4) {animation-delay: 0.3s;}
+@media (max-width: 900px) {.kpis {grid-template-columns: repeat(2, 1fr);}}
+@media (max-width: 640px) {
+  .block-container {padding: 1rem 0.8rem 2rem 0.8rem;}
+  .hero {padding: 16px 16px; border-radius: 14px;}
+  .hero h1 {font-size: 1.45rem;}
+  .hero p {font-size: 0.85rem;}
+  .kpis {gap: 10px;}
+  .card {padding: 12px 12px; border-radius: 12px;}
+  .card .label {font-size: 0.66rem; letter-spacing: 0.5px;}
+  .card .value {font-size: 1.8rem;}
+  .card .sub {font-size: 0.78rem;}
+  .pill {font-size: 0.66rem; padding: 2px 9px;}
+  .advice {font-size: 0.88rem;}
+  h4 {font-size: 1.1rem !important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -133,20 +157,17 @@ st.markdown(f'<div class="hero"><h1><span class="live-dot"></span>Pakistan Air Q
             f'{len(latest) - n_measured} model estimates</p></div>',
             unsafe_allow_html=True)
 
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.markdown(card("Worst right now", f"{worst.us_aqi:.0f}", f"{worst.city} · {worst.source}",
-                     aqi_colour(worst.us_aqi), aqi_category(worst.us_aqi)), unsafe_allow_html=True)
-with c2:
-    avg = latest["us_aqi"].mean()
-    st.markdown(card("National average", f"{avg:.0f}", "across tracked cities",
-                     aqi_colour(avg), aqi_category(avg)), unsafe_allow_html=True)
-with c3:
-    st.markdown(card("Cities unhealthy+", f"{unhealthy}/{len(latest)}", "AQI above 150",
-                     "#e74c3c" if unhealthy else "#2ecc71"), unsafe_allow_html=True)
-with c4:
-    st.markdown(card("Cleanest air", f"{best.us_aqi:.0f}", f"{best.city} · {best.source}",
-                     aqi_colour(best.us_aqi), aqi_category(best.us_aqi)), unsafe_allow_html=True)
+avg = latest["us_aqi"].mean()
+st.markdown('<div class="kpis">'
+            + card("Worst right now", f"{worst.us_aqi:.0f}", f"{worst.city} · {worst.source}",
+                   aqi_colour(worst.us_aqi), aqi_category(worst.us_aqi))
+            + card("National average", f"{avg:.0f}", "across tracked cities",
+                   aqi_colour(avg), aqi_category(avg))
+            + card("Cities unhealthy+", f"{unhealthy}/{len(latest)}", "AQI above 150",
+                   "#e74c3c" if unhealthy else "#2ecc71")
+            + card("Cleanest air", f"{best.us_aqi:.0f}", f"{best.city} · {best.source}",
+                   aqi_colour(best.us_aqi), aqi_category(best.us_aqi))
+            + '</div>', unsafe_allow_html=True)
 
 st.markdown(f'<div class="advice" style="border-color:{aqi_colour(worst.us_aqi)}">'
             f'<b>Advice for {worst.city}:</b> {aqi_advice(worst.us_aqi)}</div>',
@@ -165,13 +186,14 @@ with left:
     tab3d, tabmap, tabplay = st.tabs(["🌫️ Smog view", "🗺️ Map", "⏯️ Animate last 48h"])
 
     with tab3d:
-        st.caption("Smog haze over Pakistan · drag to move · right-click/two-finger drag to tilt · hover a city")
+        st.caption("Smog haze over Pakistan · drag to move · two-finger drag to tilt · tap a city"
+                   if IS_MOBILE else "Smog haze over Pakistan · drag to move · right-click/two-finger drag to tilt · hover a city")
         latest["label"] = latest["city"]
         latest["rgb"] = latest["colour"].apply(lambda h: [int(h[i:i + 2], 16) for i in (1, 3, 5)])
         latest["radius"] = latest["us_aqi"].clip(lower=20) * 180  # bigger glow = worse air
         smog = pdk.Layer(
             "HeatmapLayer", data=latest, get_position="[lon, lat]", get_weight="us_aqi",
-            radius_pixels=90, intensity=1.2, threshold=0.05, opacity=0.55,
+            radius_pixels=60 if IS_MOBILE else 90, intensity=1.2, threshold=0.05, opacity=0.55,
             color_range=[[46, 204, 113], [241, 196, 15], [230, 126, 34],
                          [231, 76, 60], [142, 68, 173], [123, 30, 58]],
         )
@@ -196,23 +218,24 @@ with left:
                 get_line_color=[255, 255, 255], line_width_min_pixels=1,
             ))
             st.caption(f"🟢 Green dots = {len(st_pts)} real monitoring stations reporting right now")
-        view = pdk.ViewState(latitude=29.8, longitude=70.0, zoom=4.7, pitch=45, bearing=-15)
+        view = (pdk.ViewState(latitude=30.0, longitude=69.6, zoom=3.9, pitch=30, bearing=0) if IS_MOBILE
+                else pdk.ViewState(latitude=29.8, longitude=70.0, zoom=4.7, pitch=45, bearing=-15))
         st.pydeck_chart(pdk.Deck(
             layers=layers, initial_view_state=view, map_style="dark",
             tooltip={"html": "<b>{label}</b><br/>AQI {us_aqi}<br/>{source}",
                      "style": {"background": "#161a23", "color": "#e6e6e6"}},
-        ), height=520)
+        ), height=MAP_HEIGHT)
 
     with tabmap:
         fig_map = px.scatter_map(
             latest, lat="lat", lon="lon", size="us_aqi", size_max=38, color="category",
             color_discrete_map={b[1]: b[2] for b in AQI_BANDS}, hover_name="city",
             hover_data={"us_aqi": ":.0f", "pm2_5": ":.0f", "lat": False, "lon": False, "category": True},
-            zoom=4.3, center={"lat": 30.2, "lon": 70.5}, map_style="carto-darkmatter", height=520,
+            zoom=MAP_ZOOM, center={"lat": 30.2, "lon": 69.8}, map_style="carto-darkmatter", height=MAP_HEIGHT,
         )
         fig_map.update_layout(margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
                               legend=dict(title="", bgcolor="rgba(15,17,23,0.7)", font=dict(color="#e6e6e6")))
-        st.plotly_chart(fig_map, width="stretch")
+        st.plotly_chart(fig_map, width="stretch", config=CHART_CONFIG)
 
     with tabplay:
         st.caption("Press ▶ to watch smog move across Pakistan hour by hour")
@@ -228,13 +251,13 @@ with left:
             color_continuous_scale=[[0, "#2ecc71"], [0.17, "#f1c40f"], [0.33, "#e67e22"],
                                     [0.5, "#e74c3c"], [0.75, "#8e44ad"], [1, "#7b1e3a"]],
             range_color=[0, 400], animation_frame="hour", hover_name="city",
-            zoom=4.3, center={"lat": 30.2, "lon": 70.5}, map_style="carto-darkmatter", height=520,
+            zoom=MAP_ZOOM, center={"lat": 30.2, "lon": 69.8}, map_style="carto-darkmatter", height=MAP_HEIGHT,
         )
         fig_anim.update_layout(margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
                                coloraxis_colorbar=dict(title="AQI"))
         if fig_anim.layout.updatemenus:
             fig_anim.layout.updatemenus[0].buttons[0].args[1]["frame"]["duration"] = 250
-        st.plotly_chart(fig_anim, width="stretch")
+        st.plotly_chart(fig_anim, width="stretch", config=CHART_CONFIG)
 
 with right:
     st.markdown("#### 🏆 City ranking (worst → best)")
@@ -244,11 +267,11 @@ with right:
         text=[f"{v:.0f}" for v in ranked["us_aqi"]], textposition="outside",
         hovertext=ranked["category"] + " · " + ranked["source"], hoverinfo="text+x",
     ))
-    fig_rank.update_layout(height=520, margin=dict(l=0, r=30, t=0, b=0), template="plotly_dark",
+    fig_rank.update_layout(height=480 if IS_MOBILE else 520, margin=dict(l=0, r=30, t=0, b=0), template="plotly_dark",
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            xaxis_title="US AQI", showlegend=False,
                            xaxis_range=[0, ranked["us_aqi"].max() * 1.18])
-    st.plotly_chart(fig_rank, width="stretch")
+    st.plotly_chart(fig_rank, width="stretch", config=CHART_CONFIG)
 
 # ---------- trend ----------
 st.markdown("#### 📈 Hourly trend")
@@ -260,7 +283,7 @@ trend["time"] = pd.to_datetime(trend["time"])
 trend = trend[(trend["time"] >= trend["time"].max() - pd.Timedelta(days=days))
               & trend["city"].isin(picked)]
 
-fig_trend = px.line(trend, x="time", y="us_aqi", color="city", template="plotly_dark", height=430,
+fig_trend = px.line(trend, x="time", y="us_aqi", color="city", template="plotly_dark", height=360 if IS_MOBILE else 430,
                     color_discrete_sequence=["#4cc9f0", "#f72585", "#ffd166", "#06d6a0",
                                              "#b8b8ff", "#ff9f1c"])
 lower = 0
@@ -272,8 +295,8 @@ for upper, label, colour, _ in AQI_BANDS:
     lower = upper
 fig_trend.update_layout(margin=dict(l=0, r=10, t=10, b=0), paper_bgcolor="rgba(0,0,0,0)",
                         plot_bgcolor="rgba(0,0,0,0)", yaxis_title="US AQI", xaxis_title="",
-                        legend=dict(title=""), yaxis_range=[0, top])
-st.plotly_chart(fig_trend, width="stretch")
+                        legend=dict(title="", orientation="h", y=-0.15, x=0), yaxis_range=[0, top])
+st.plotly_chart(fig_trend, width="stretch", config=CHART_CONFIG)
 
 # ---------- legend ----------
 with st.expander("What do the AQI levels mean?"):
